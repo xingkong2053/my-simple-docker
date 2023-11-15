@@ -61,7 +61,6 @@ func readUserCommand() ([]string, error) {
 	pipe := os.NewFile(uintptr(3 /*文件描述符*/), "pipe")
 	bytes, err := io.ReadAll(pipe) // 阻塞
 	if err != nil {
-		c
 		return nil, errors.Wrap(err, "read user command")
 	}
 	logrus.Info("init command invoked. arg is " + string(bytes))
