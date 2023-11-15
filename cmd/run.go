@@ -41,11 +41,13 @@ func Run(cmd string, tty bool) {
 	parent, writePipe, err := NewParentProcess(tty, cmd)
 	if err != nil {
 		logrus.Error("new parent process error " + err.Error())
+		return
 	}
 	// Start() 会clone出来一个namespace隔离的进程
 	// 然后在子进程中，调用/proc/self/exe(./mydocker)
 	if err := parent.Start(); err != nil {
 		logrus.Error(err.Error())
+		return
 	}
 
 	// 创建cgroup manager并设置资源限制
@@ -60,14 +62,15 @@ func Run(cmd string, tty bool) {
 	err = manager.Apply(parent.Process.Pid)
 	if err != nil {
 		logrus.Error(err.Error())
+		return
 	}
 
 	_, err = writePipe.WriteString(cmd)
 	if err != nil {
 		logrus.Error("send cmd to child process error: " + err.Error())
+		return
 	}
 	parent.Wait()
-	os.Exit(-1)
 }
 
 func NewParentProcess(tty bool, cmd string) (*exec.Cmd, *os.File, error) {
