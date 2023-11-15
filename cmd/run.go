@@ -38,7 +38,10 @@ func init() {
 }
 
 func Run(cmd string, tty bool) {
-	parent := NewParentProcess(tty, cmd)
+	parent, writePipe, err := NewParentProcess(tty, cmd)
+	if err != nil {
+		logrus.Error("new parent process error " + err.Error())
+	}
 	// Start() 会clone出来一个namespace隔离的进程
 	// 然后在子进程中，调用/proc/self/exe(./mydocker)
 	if err := parent.Start(); err != nil {
@@ -49,7 +52,7 @@ func Run(cmd string, tty bool) {
 	manager := subsystem.NewCgroupManager("mydocker-cgroup")
 	defer manager.Destroy()
 	// 设置资源限制
-	err := manager.Set(&resource)
+	err = manager.Set(&resource)
 	if err != nil {
 		logrus.Error(err.Error())
 		return
@@ -59,20 +62,31 @@ func Run(cmd string, tty bool) {
 		logrus.Error(err.Error())
 	}
 
+	_, err = writePipe.WriteString(cmd)
+	if err != nil {
+		logrus.Error("send cmd to child process error: " + err.Error())
+	}
 	parent.Wait()
 	os.Exit(-1)
 }
 
-func NewParentProcess(tty bool, cmd string) *exec.Cmd {
+func NewParentProcess(tty bool, cmd string) (*exec.Cmd, *os.File, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
 	command := exec.Command("/proc/self/exe", "init", cmd)
 	// execute command with namespace
 	command.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS | syscall.CLONE_NEWNET | syscall.CLONE_NEWIPC,
 	}
+
+	// 把readPipe发送给子进程
+	command.ExtraFiles = []*os.File{r}
 	if tty {
 		command.Stdin = os.Stdin
 		command.Stdout = os.Stdout
 		command.Stderr = os.Stderr
 	}
-	return command
+	return command, w, nil
 }
