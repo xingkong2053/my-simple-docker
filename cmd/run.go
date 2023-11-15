@@ -38,7 +38,7 @@ func init() {
 }
 
 func Run(cmd string, tty bool) {
-	parent, writePipe, err := NewParentProcess(tty, cmd)
+	parent, writePipe, err := NewParentProcess(tty)
 	if err != nil {
 		logrus.Error("new parent process error " + err.Error())
 		return
@@ -70,15 +70,16 @@ func Run(cmd string, tty bool) {
 		logrus.Error("send cmd to child process error: " + err.Error())
 		return
 	}
+	_ = writePipe.Close()
 	parent.Wait()
 }
 
-func NewParentProcess(tty bool, cmd string) (*exec.Cmd, *os.File, error) {
+func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command("/proc/self/exe", "init", cmd)
+	command := exec.Command("/proc/self/exe", "init")
 	// execute command with namespace
 	command.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS | syscall.CLONE_NEWNET | syscall.CLONE_NEWIPC,

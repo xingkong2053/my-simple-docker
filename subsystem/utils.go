@@ -7,6 +7,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // GetAbsoluteCgroupPath 查找subsystem挂载的hierarchy相对路径对应的cgroup在虚拟文件中的路径
@@ -50,7 +52,7 @@ func FindCgroupMountPoint(subsystem string) (string, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		lineNo++
-		if strings.HasSuffix(line, ",memory") {
+		if strings.HasSuffix(line, "," + subsystem) {
 			fields := strings.Split(line, " ")
 			if len(fields) < 5 {
 				errStr := "/proc/self/mountinfo line:%d: %s doesn't contain cgroup root path"
@@ -77,5 +79,5 @@ func RemoveCgroup(subsystem string, cgroupPath string) error {
 	if err != nil {
 		return err
 	}
-	return os.Remove(absoluteCgroupPath)
+	return errors.Wrap(os.RemoveAll(absoluteCgroupPath), "remove " + subsystem +" cgroup")
 }
