@@ -52,6 +52,11 @@ func RunContainerInit() (err error) {
 }
 
 func mountProc() error {
+	// https://github.com/xianlubird/mydocker/issues/41
+	// systemd 加入linux之后, mount namespace 就变成 shared by default, 所以你必须显式
+	// 声明你要这个新的mount namespace独立。
+	syscall.Mount("", "/", "", syscall.MS_PRIVATE | syscall.MS_REC, "")
+
 	mountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
 	// 挂在proc文件系统，方便使用ps等命令
 	return errors.Wrap(syscall.Mount("proc", "/proc", "proc", uintptr(mountFlags), ""), "mount proc")
