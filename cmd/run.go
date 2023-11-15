@@ -21,7 +21,7 @@ var resource subsystem.ResourceConfig
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run container",
-	Args: cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(1),
 	Run: func(_ *cobra.Command, args []string) {
 		cmd := args[0]
 		logrus.Info("start run " + cmd)
@@ -41,9 +41,24 @@ func Run(cmd string, tty bool) {
 	parent := NewParentProcess(tty, cmd)
 	// Start() 会clone出来一个namespace隔离的进程
 	// 然后在子进程中，调用/proc/self/exe(./mydocker)
-	if err := parent.Start(); err!= nil {
+	if err := parent.Start(); err != nil {
 		logrus.Error(err.Error())
 	}
+
+	// 创建cgroup manager并设置资源限制
+	manager := subsystem.NewCgroupManager("mydocker-cgroup")
+	defer manager.Destroy()
+	// 设置资源限制
+	err := manager.Set(&resource)
+	if err != nil {
+		logrus.Error(err.Error())
+		return
+	}
+	err = manager.Apply(parent.Process.Pid)
+	if err != nil {
+		logrus.Error(err.Error())
+	}
+
 	parent.Wait()
 	os.Exit(-1)
 }
