@@ -4,6 +4,7 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"mydocker/subsystem"
 	"os"
 	"os/exec"
 	"syscall"
@@ -13,6 +14,7 @@ import (
 )
 
 var tty bool
+var resource subsystem.ResourceConfig
 
 // runCmd represents the run command
 // 退出之后执行 `sudo mount -t proc proc /proc`
@@ -30,6 +32,9 @@ var runCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(runCmd)
 	runCmd.Flags().BoolVarP(&tty, "tty", "t", false, "enable tty")
+	runCmd.Flags().StringVarP(&resource.MemoryLimit, "memory", "m", "", "memory limit")
+	runCmd.Flags().StringVar(&resource.CpuShare, "cpushare", "", "cpu share limit")
+	runCmd.Flags().StringVar(&resource.CpuSet, "cpuset", "", "cpu set limit")
 }
 
 func Run(cmd string, tty bool) {
