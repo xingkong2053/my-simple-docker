@@ -162,9 +162,14 @@ func CreateMountPoint(rootUrl string, mntUrl string) error {
 	if err != nil {
 		return err
 	}
-	dirs := fmt.Sprintf("dirs=%swriteLayer:%sbusybox", rootUrl, rootUrl)
-	logrus.Infof("exec command: mount -t aufs -o %s none %s", dirs, mntUrl)
-	cmd := exec.Command("mount", "-t", "aufs", "-o", dirs, "none", mntUrl)
+	err = os.Mkdir(rootUrl + "workdir/", 0777)
+	if err != nil {
+		return err
+	}
+	// https://askubuntu.com/questions/109413/how-do-i-use-overlayfs
+	dirs := fmt.Sprintf("upperdir=%swriteLayer,lowerdir=%sbusybox,workdir=%sworkdir", rootUrl, rootUrl, rootUrl)
+	logrus.Infof("exec command: mount -t overlay -o %s none %s", dirs, mntUrl)
+	cmd := exec.Command("mount", "-t", "overlay" /* ubuntu 不再支持aufs, 使用overlay*/, "-o", dirs, "none", mntUrl)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -172,7 +177,7 @@ func CreateMountPoint(rootUrl string, mntUrl string) error {
 
 func DeleteWorkSpace(rootUrl string, mntUrl string) error {
 	// unmount & delete mnt
-	cmd := exec.Command("unmount", mntUrl)
+	cmd := exec.Command("umount", mntUrl)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
@@ -183,7 +188,10 @@ func DeleteWorkSpace(rootUrl string, mntUrl string) error {
 	if err != nil {
 		return err
 	}
-
+	err = os.RemoveAll(rootUrl + "workdir")
+	if err != nil {
+		return err
+	}
 	// delete write layer
 	return os.RemoveAll(rootUrl + "writeLayer/")
 }
