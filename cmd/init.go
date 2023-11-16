@@ -41,7 +41,7 @@ func RunContainerInit() (err error) {
 		return errors.Wrap(err, "exec look path")
 	}
 
-	err = mountProc()
+	err = setupMount()
 	if err != nil {
 		return err
 	}
@@ -51,15 +51,29 @@ func RunContainerInit() (err error) {
 	return errors.Wrap(syscall.Exec(path, cmdArr[0:], os.Environ()), "exec command "+path)
 }
 
-func mountProc() error {
+func setupMount() error {
+	pwd, err := os.Getwd()
+	if err != nil {
+		return errors.Wrap(err, "get wd")
+	}
+	logrus.Info("current location is " + pwd)
+	err = pivotRoot(pwd)
+	if err != nil {
+		return errors.Wrap(err, "pivot root")
+	}
+
 	// https://github.com/xianlubird/mydocker/issues/41
 	// systemd 加入linux之后, mount namespace 就变成 shared by default, 所以你必须显式
 	// 声明你要这个新的mount namespace独立。
-	syscall.Mount("", "/", "", syscall.MS_PRIVATE | syscall.MS_REC, "")
+	syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, "")
 
 	mountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
 	// 挂在proc文件系统，方便使用ps等命令
-	return errors.Wrap(syscall.Mount("proc", "/proc", "proc", uintptr(mountFlags), ""), "mount proc")
+	syscall.Mount("proc", "/proc", "proc", uintptr(mountFlags), "")
+
+	// tmpfs基于内存的文件系统
+	syscall.Mount("tmpfs", "/dev", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755")
+	return errors.Wrap(nil, "mount proc")
 }
 
 func readUserCommand() ([]string, error) {
@@ -70,4 +84,8 @@ func readUserCommand() ([]string, error) {
 	}
 	logrus.Info("init command invoked. arg is " + string(bytes))
 	return strings.Split(string(bytes), " "), nil
+}
+
+func pivotRoot(root string) error {
+	return nil
 }
