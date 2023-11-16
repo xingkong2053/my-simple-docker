@@ -58,7 +58,7 @@ func (c *CgroupManager) Destroy() {
 	for _, subsystem := range SubsystemSet {
 		err := subsystem.Remove(c.Path)
 		if err != nil {
-			logrus.Error(err.Error())
+			logrus.Warn(err.Error())
 		}
 	}
 }
