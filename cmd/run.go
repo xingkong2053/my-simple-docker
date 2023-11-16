@@ -15,6 +15,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type CleanFn = func() error
+
+var cleanFns []CleanFn
+
+func collectCleanFn(fn CleanFn, err error) error {
+	if err != nil {
+		return err
+	}
+	cleanFns = append(cleanFns, fn)
+	return nil
+}
+
+var cleanup = func() error {
+	if cleanFns == nil || len(cleanFns) == 0 {
+		return nil
+	}
+	logrus.Info("do cleanup")
+	i := len(cleanFns) - 1
+	for i >= 0 {
+		fn := cleanFns[i]
+		if fn == nil {
+			continue
+		}
+		err := fn()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 var tty bool
 var resource subsystem.ResourceConfig
 
@@ -40,13 +71,16 @@ func init() {
 }
 
 func Run(cmd string, tty bool) {
-	parent, writePipe, err := NewParentProcess(tty)
+	parent, writePipe, err, clean := NewParentProcess(tty)
 	if err != nil {
 		logrus.Error("new parent process error " + err.Error())
 		return
 	}
 	defer func() {
-		err := DeleteWorkSpace("/root/", "/root/mnt/")
+		if clean == nil {
+			return
+		}
+		err := clean()
 		if err != nil {
 			logrus.Error(errors.Wrap(err, "delete workspace").Error())
 		}
@@ -83,10 +117,10 @@ func Run(cmd string, tty bool) {
 	parent.Wait()
 }
 
-func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error) {
+func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, CleanFn) {
 	r, w, err := os.Pipe()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, err, nil
 	}
 	command := exec.Command("/proc/self/exe", "init")
 	// execute command with namespace
@@ -97,9 +131,9 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error) {
 	// 把readPipe发送给子进程
 	command.ExtraFiles = []*os.File{r}
 	mntUrl := "/root/mnt/"
-	err = NewWorkSpace("/root/", mntUrl)
+	cleanup, err := NewWorkSpace("/root/", mntUrl)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, err, cleanup
 	}
 	command.Dir = mntUrl
 	if tty {
@@ -107,20 +141,32 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error) {
 		command.Stdout = os.Stdout
 		command.Stderr = os.Stderr
 	}
-	return command, w, nil
+	return command, w, nil, cleanup
 }
 
-func NewWorkSpace(rootUrl string, mntUrl string) error {
+func NewWorkSpace(rootUrl string, mntUrl string) (CleanFn, error) {
+	// readonly layer
 	err := CreateReadonlyLayer(rootUrl)
 	if err != nil {
-		return errors.Wrap(err, "create readonly layer")
+		return cleanup, errors.Wrap(err, "create readonly layer")
 	}
-	err = CreateWriteLayer(rootUrl)
+	// write layer
+	err = collectCleanFn(CreateWriteLayer(rootUrl))
 	if err != nil {
-		return errors.Wrap(err, "create write layer")
+		return cleanup, errors.Wrap(err, "create write layer")
 	}
-	err = CreateMountPoint(rootUrl, mntUrl)
-	return errors.Wrap(err, "create mount point")
+	// workdir
+	err = collectCleanFn(NewDir(rootUrl+"workdir/", 0777))
+	if err != nil {
+		return cleanup, err
+	}
+	// create mnt dir
+	err = collectCleanFn(NewDir(mntUrl, 0777))
+	if err != nil {
+		return cleanup, err
+	}
+	// mount mnt
+	return cleanup, collectCleanFn(Mount(rootUrl, mntUrl))
 }
 
 func CreateReadonlyLayer(rootUrl string) error {
@@ -152,46 +198,34 @@ func PathExists(filePath string) (bool, error) {
 	}
 }
 
-func CreateWriteLayer(rootUrl string) error {
+func CreateWriteLayer(rootUrl string) (CleanFn, error) {
 	// 创建writeLayer文件夹作为容器的唯一可写层
-	return os.Mkdir(rootUrl+"writeLayer/", 0777)
+	return NewDir(rootUrl+"writeLayer/", 0777)
 }
 
-func CreateMountPoint(rootUrl string, mntUrl string) error {
-	err := os.Mkdir(mntUrl, 0777)
-	if err != nil {
-		return err
-	}
-	err = os.Mkdir(rootUrl + "workdir/", 0777)
-	if err != nil {
-		return err
-	}
+func Mount(rootUrl string, mntUrl string) (CleanFn, error) {
 	// https://askubuntu.com/questions/109413/how-do-i-use-overlayfs
 	dirs := fmt.Sprintf("upperdir=%swriteLayer,lowerdir=%sbusybox,workdir=%sworkdir", rootUrl, rootUrl, rootUrl)
 	logrus.Infof("exec command: mount -t overlay -o %s none %s", dirs, mntUrl)
 	cmd := exec.Command("mount", "-t", "overlay" /* ubuntu 不再支持aufs, 使用overlay*/, "-o", dirs, "none", mntUrl)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func DeleteWorkSpace(rootUrl string, mntUrl string) error {
-	// unmount & delete mnt
-	cmd := exec.Command("umount", mntUrl)
+	unMount := func() error {
+		logrus.Debug("unmount mnt")
+		cmd := exec.Command("umount", mntUrl)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-	if err != nil {
-		return err
+	return func() error { return unMount() }, err
+}
+
+func NewDir(dirPath string, perm os.FileMode) (cleanFn CleanFn, err error) {
+	err = os.Mkdir(dirPath, perm)
+	cleanFn = func() error {
+		logrus.Debug("remove dir " + dirPath)
+		return os.RemoveAll(dirPath)
 	}
-	err = os.RemoveAll(mntUrl)
-	if err != nil {
-		return err
-	}
-	err = os.RemoveAll(rootUrl + "workdir")
-	if err != nil {
-		return err
-	}
-	// delete write layer
-	return os.RemoveAll(rootUrl + "writeLayer/")
+	return
 }
