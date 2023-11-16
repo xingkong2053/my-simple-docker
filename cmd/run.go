@@ -4,6 +4,8 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"fmt"
+	"github.com/pkg/errors"
 	"mydocker/subsystem"
 	"os"
 	"os/exec"
@@ -43,6 +45,13 @@ func Run(cmd string, tty bool) {
 		logrus.Error("new parent process error " + err.Error())
 		return
 	}
+	defer func() {
+		err := DeleteWorkSpace("/root/", "/root/mnt/")
+		if err != nil {
+			logrus.Error(errors.Wrap(err, "delete workspace").Error())
+		}
+	}()
+
 	// Start() 会clone出来一个namespace隔离的进程
 	// 然后在子进程中，调用/proc/self/exe(./mydocker)
 	if err := parent.Start(); err != nil {
@@ -87,11 +96,94 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error) {
 
 	// 把readPipe发送给子进程
 	command.ExtraFiles = []*os.File{r}
-	command.Dir = "/root/busybox"
+	mntUrl := "/root/mnt/"
+	err = NewWorkSpace("/root/", mntUrl)
+	if err != nil {
+		return nil, nil, err
+	}
+	command.Dir = mntUrl
 	if tty {
 		command.Stdin = os.Stdin
 		command.Stdout = os.Stdout
 		command.Stderr = os.Stderr
 	}
 	return command, w, nil
+}
+
+func NewWorkSpace(rootUrl string, mntUrl string) error {
+	err := CreateReadonlyLayer(rootUrl)
+	if err != nil {
+		return errors.Wrap(err, "create readonly layer")
+	}
+	err = CreateWriteLayer(rootUrl)
+	if err != nil {
+		return errors.Wrap(err, "create write layer")
+	}
+	err = CreateMountPoint(rootUrl, mntUrl)
+	return errors.Wrap(err, "create mount point")
+}
+
+func CreateReadonlyLayer(rootUrl string) error {
+	// 将busybox.tar解压到busybox目录下
+	bbDir := rootUrl + "busybox/"
+	exist, err := PathExists(bbDir)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+	err = os.Mkdir(bbDir, 0777)
+	if err != nil {
+		return err
+	}
+	_, err = exec.Command("tar", "-xvf", rootUrl+"busybox.tar", "-C", bbDir).CombinedOutput()
+	return err
+}
+
+func PathExists(filePath string) (bool, error) {
+	_, err := os.Stat(filePath)
+	if err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
+func CreateWriteLayer(rootUrl string) error {
+	// 创建writeLayer文件夹作为容器的唯一可写层
+	return os.Mkdir(rootUrl+"writeLayer/", 0777)
+}
+
+func CreateMountPoint(rootUrl string, mntUrl string) error {
+	err := os.Mkdir(mntUrl, 0777)
+	if err != nil {
+		return err
+	}
+	dirs := fmt.Sprintf("dirs=%swriteLayer:%sbusybox", rootUrl, rootUrl)
+	logrus.Infof("exec command: mount -t aufs -o %s none %s", dirs, mntUrl)
+	cmd := exec.Command("mount", "-t", "aufs", "-o", dirs, "none", mntUrl)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func DeleteWorkSpace(rootUrl string, mntUrl string) error {
+	// unmount & delete mnt
+	cmd := exec.Command("unmount", mntUrl)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	err = os.RemoveAll(mntUrl)
+	if err != nil {
+		return err
+	}
+
+	// delete write layer
+	return os.RemoveAll(rootUrl + "writeLayer/")
 }
