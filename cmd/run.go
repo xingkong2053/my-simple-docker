@@ -87,6 +87,7 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error) {
 
 	// 把readPipe发送给子进程
 	command.ExtraFiles = []*os.File{r}
+	command.Dir = "/root/busybox"
 	if tty {
 		command.Stdin = os.Stdin
 		command.Stdout = os.Stdout
