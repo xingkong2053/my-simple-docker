@@ -28,7 +28,7 @@ func collectCleanFn(fn CleanFn, err error) error {
 }
 
 var cleanup = func() error {
-	if cleanFns == nil || len(cleanFns) == 0 {
+	if len(cleanFns) == 0 {
 		return nil
 	}
 	logrus.Info("do cleanup")
@@ -42,6 +42,7 @@ var cleanup = func() error {
 		if err != nil {
 			return err
 		}
+		i--
 	}
 	return nil
 }
@@ -205,9 +206,9 @@ func CreateWriteLayer(rootUrl string) (CleanFn, error) {
 
 func Mount(rootUrl string, mntUrl string) (CleanFn, error) {
 	// https://askubuntu.com/questions/109413/how-do-i-use-overlayfs
-	dirs := fmt.Sprintf("upperdir=%swriteLayer,lowerdir=%sbusybox,workdir=%sworkdir", rootUrl, rootUrl, rootUrl)
-	logrus.Infof("exec command: mount -t overlay -o %s none %s", dirs, mntUrl)
-	cmd := exec.Command("mount", "-t", "overlay" /* ubuntu 不再支持aufs, 使用overlay*/, "-o", dirs, "none", mntUrl)
+	option := fmt.Sprintf("upperdir=%swriteLayer,lowerdir=%sbusybox,workdir=%sworkdir", rootUrl, rootUrl, rootUrl)
+	logrus.Infof("exec command: mount -t overlay -o %s none %s", option, mntUrl)
+	cmd := exec.Command("mount", "-t", "overlay" /* ubuntu 不再支持aufs, 使用overlay*/, "-o", option, "none", mntUrl)
 	unMount := func() error {
 		logrus.Debug("unmount mnt")
 		cmd := exec.Command("umount", mntUrl)
@@ -218,7 +219,7 @@ func Mount(rootUrl string, mntUrl string) (CleanFn, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-	return func() error { return unMount() }, err
+	return unMount, err
 }
 
 func NewDir(dirPath string, perm os.FileMode) (cleanFn CleanFn, err error) {
