@@ -85,7 +85,7 @@ func Run(cmd string, tty bool) {
 		return
 	}
 	defer func() {
-		if clean == nil {
+		if !tty || clean == nil {
 			return
 		}
 		err := clean()
@@ -107,6 +107,13 @@ func Run(cmd string, tty bool) {
 		logrus.Error(errors.Wrap(err, "create container info").Error())
 		return
 	}
+	defer func() {
+		if !tty { return }
+		err := cleanInfo()
+		if err != nil {
+			logrus.Error(errors.Wrap(err, "clean container info").Error())
+		}
+	}()
 
 	// 创建cgroup manager并设置资源限制
 	manager := subsystem.NewCgroupManager("mydocker-cgroup")
@@ -131,10 +138,6 @@ func Run(cmd string, tty bool) {
 	_ = writePipe.Close()
 	if tty {
 		_ = parent.Wait()
-		err := cleanInfo()
-		if err != nil {
-			logrus.Error(errors.Wrap(err, "clean container info").Error())
-		}
 	}
 }
 
