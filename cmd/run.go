@@ -9,6 +9,7 @@ import (
 	"mydocker/subsystem"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
@@ -49,6 +50,7 @@ var cleanup = func() error {
 
 var tty bool
 var resource subsystem.ResourceConfig
+var volume string
 
 // runCmd represents the run command
 // 退出之后执行 `sudo mount -t proc proc /proc`
@@ -69,6 +71,7 @@ func init() {
 	runCmd.Flags().StringVarP(&resource.MemoryLimit, "memory", "m", "", "memory limit")
 	runCmd.Flags().StringVar(&resource.CpuShare, "cpushare", "", "cpu share limit")
 	runCmd.Flags().StringVar(&resource.CpuSet, "cpuset", "", "cpu set limit")
+	runCmd.Flags().StringVarP(&volume, "volume", "v", "", "mount volume")
 }
 
 func Run(cmd string, tty bool) {
@@ -167,7 +170,64 @@ func NewWorkSpace(rootUrl string, mntUrl string) (CleanFn, error) {
 		return cleanup, err
 	}
 	// mount mnt
-	return cleanup, collectCleanFn(Mount(rootUrl, mntUrl))
+	err = collectCleanFn(Mount(rootUrl, mntUrl))
+	if err != nil {
+		return cleanup, err
+	}
+	// mount volume
+	if volume != "" {
+		src, dist, err := parseVolume(volume)
+		if err != nil {
+			return cleanup, err
+		}
+		logrus.Debugf("mount volume %s to %s", src, dist)
+		exists, err := PathExists(src)
+		if err != nil {
+			return cleanup, err
+		}
+		if !exists {
+			logrus.Debugf("path %s don't exist, create", src)
+			err := os.Mkdir(src, 0777)
+			if err != nil {
+				return cleanup, err
+			}
+		}
+		err = collectCleanFn(NewDir(mntUrl+dist, 0777))
+		if err != nil {
+			return cleanup, err
+		}
+		// mount volume
+		err = collectCleanFn(MountDist(src, mntUrl+dist))
+		if err != nil {
+			return cleanup, err
+		}
+	}
+	return cleanup, nil
+}
+
+func parseVolume(volume string) (string, string, error) {
+	arr := strings.Split(volume, ":")
+	err := errors.New("volume option value: " + volume + " is not correct")
+	if len(arr) < 2 {
+		return "", "", err
+	}
+	src, dist := arr[0], arr[1]
+	if src == "" || dist == "" {
+		return "", "", err
+	}
+	return src, dist, nil
+}
+
+func MountDist(src, dist string) (CleanFn, error) {
+	cmd := exec.Command("mount", "--bind", src, dist)
+	logrus.Debug(cmd.String())
+	BindOutput(cmd)
+	return func() error {
+		umount := exec.Command("umount", dist)
+		logrus.Debug(umount.String())
+		BindOutput(umount)
+		return umount.Run()
+	}, cmd.Run()
 }
 
 func CreateReadonlyLayer(rootUrl string) error {
@@ -212,12 +272,10 @@ func Mount(rootUrl string, mntUrl string) (CleanFn, error) {
 	unMount := func() error {
 		logrus.Debug("unmount mnt")
 		cmd := exec.Command("umount", mntUrl)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		BindOutput(cmd)
 		return cmd.Run()
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	BindOutput(cmd)
 	err := cmd.Run()
 	return unMount, err
 }
@@ -229,4 +287,9 @@ func NewDir(dirPath string, perm os.FileMode) (cleanFn CleanFn, err error) {
 		return os.RemoveAll(dirPath)
 	}
 	return
+}
+
+func BindOutput(cmd *exec.Cmd) {
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 }
