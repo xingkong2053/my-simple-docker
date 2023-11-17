@@ -51,6 +51,7 @@ var tty bool
 var detach bool
 var resource subsystem.ResourceConfig
 var volume string
+var name string
 
 // runCmd represents the run command
 // 退出之后执行 `sudo mount -t proc proc /proc`
@@ -74,6 +75,7 @@ func init() {
 	runCmd.Flags().StringVar(&resource.CpuShare, "cpushare", "", "cpu share limit")
 	runCmd.Flags().StringVar(&resource.CpuSet, "cpuset", "", "cpu set limit")
 	runCmd.Flags().StringVarP(&volume, "volume", "v", "", "mount volume")
+	runCmd.Flags().StringVarP(&name, "name", "n", "", "container name")
 }
 
 func Run(cmd string, tty bool) {
@@ -96,6 +98,13 @@ func Run(cmd string, tty bool) {
 	// 然后在子进程中，调用/proc/self/exe(./mydocker)
 	if err := parent.Start(); err != nil {
 		logrus.Error(err.Error())
+		return
+	}
+
+	// 记录容器信息
+	_, cleanInfo, err := container.CreateContainerInfo(parent.Process.Pid, cmd, name)
+	if err != nil {
+		logrus.Error(errors.Wrap(err, "create container info").Error())
 		return
 	}
 
@@ -122,6 +131,10 @@ func Run(cmd string, tty bool) {
 	_ = writePipe.Close()
 	if tty {
 		_ = parent.Wait()
+		err := cleanInfo()
+		if err != nil {
+			logrus.Error(errors.Wrap(err, "clean container info").Error())
+		}
 	}
 }
 
