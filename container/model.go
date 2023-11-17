@@ -1,11 +1,11 @@
 package container
 
-type ContainerStatus uint
+type ContainerStatus string
 
 const (
-	Running ContainerStatus = iota
-	Stop
-	Exit
+	Running ContainerStatus = "running"
+	Stop                    = "stop"
+	Exit                    = "exit"
 )
 
 type ContainerInfo struct {
