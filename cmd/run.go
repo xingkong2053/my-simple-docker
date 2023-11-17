@@ -49,6 +49,7 @@ var cleanup = func() error {
 }
 
 var tty bool
+var detach bool
 var resource subsystem.ResourceConfig
 var volume string
 
@@ -68,6 +69,8 @@ var runCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(runCmd)
 	runCmd.Flags().BoolVarP(&tty, "tty", "t", false, "enable tty")
+	runCmd.Flags().BoolVarP(&detach, "detach", "d", false, "detach")
+	runCmd.MarkFlagsMutuallyExclusive("tty", "detach")
 	runCmd.Flags().StringVarP(&resource.MemoryLimit, "memory", "m", "", "memory limit")
 	runCmd.Flags().StringVar(&resource.CpuShare, "cpushare", "", "cpu share limit")
 	runCmd.Flags().StringVar(&resource.CpuSet, "cpuset", "", "cpu set limit")
@@ -118,7 +121,9 @@ func Run(cmd string, tty bool) {
 		return
 	}
 	_ = writePipe.Close()
-	_ = parent.Wait()
+	if tty {
+		_ = parent.Wait()
+	}
 }
 
 func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, CleanFn) {
