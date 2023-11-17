@@ -118,7 +118,7 @@ func Run(cmd string, tty bool) {
 		return
 	}
 	_ = writePipe.Close()
-	parent.Wait()
+	_ = parent.Wait()
 }
 
 func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, CleanFn) {
@@ -134,7 +134,7 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, CleanFn) {
 
 	// 把readPipe发送给子进程
 	command.ExtraFiles = []*os.File{r}
-	mntUrl := "/root/mnt/"
+	mntUrl := "/root/mnt"
 	cleanup, err := NewWorkSpace("/root/", mntUrl)
 	if err != nil {
 		return nil, nil, err, cleanup
