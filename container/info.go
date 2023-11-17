@@ -9,11 +9,7 @@ import (
 	"time"
 )
 
-func CreateContainerInfo(pid int, cmd string, name string) (string, util.CleanFn, error) {
-	id := util.CreateCId()
-	if name == "" {
-		name = id
-	}
+func CreateContainerInfo(id string, pid int, cmd string, name string) (string, util.CleanFn, error) {
 	info := ContainerInfo{
 		Pid:    strconv.Itoa(pid),
 		Id:     id,

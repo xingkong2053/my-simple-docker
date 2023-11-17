@@ -13,6 +13,7 @@ import (
 	"mydocker/util"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"syscall"
 )
@@ -79,7 +80,11 @@ func init() {
 }
 
 func Run(cmd string, tty bool) {
-	parent, writePipe, err, clean := NewParentProcess(tty)
+	id := util.CreateCId()
+	if name == "" {
+		name = id
+	}
+	parent, writePipe, err, clean := NewParentProcess(tty, name)
 	if err != nil {
 		logrus.Error("new parent process error " + err.Error())
 		return
@@ -102,13 +107,15 @@ func Run(cmd string, tty bool) {
 	}
 
 	// 记录容器信息
-	_, cleanInfo, err := container.CreateContainerInfo(parent.Process.Pid, cmd, name)
+	_, cleanInfo, err := container.CreateContainerInfo(id, parent.Process.Pid, cmd, name)
 	if err != nil {
 		logrus.Error(errors.Wrap(err, "create container info").Error())
 		return
 	}
 	defer func() {
-		if !tty { return }
+		if !tty {
+			return
+		}
 		err := cleanInfo()
 		if err != nil {
 			logrus.Error(errors.Wrap(err, "clean container info").Error())
@@ -141,7 +148,7 @@ func Run(cmd string, tty bool) {
 	}
 }
 
-func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, util.CleanFn) {
+func NewParentProcess(tty bool, containerName string) (*exec.Cmd, *os.File, error, util.CleanFn) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, nil, err, nil
@@ -154,8 +161,8 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, util.CleanFn) {
 
 	// 把readPipe发送给子进程
 	command.ExtraFiles = []*os.File{r}
-	mntUrl := "/root/mnt"
-	cleanup, err := NewWorkSpace("/root/", mntUrl)
+	mntUrl := path.Join("/root/mnt", containerName)
+	cleanup, err := NewWorkSpace(path.Join("/root", containerName), mntUrl)
 	if err != nil {
 		return nil, nil, err, cleanup
 	}
@@ -180,7 +187,7 @@ func NewWorkSpace(rootUrl string, mntUrl string) (util.CleanFn, error) {
 		return cleanup, errors.Wrap(err, "create write layer")
 	}
 	// workdir
-	err = CollectCleanFn(util.NewDir(rootUrl+"workdir/", 0777))
+	err = CollectCleanFn(util.NewDir(path.Join(rootUrl, "workdir"), 0777))
 	if err != nil {
 		return cleanup, err
 	}
@@ -252,7 +259,7 @@ func MountDist(src, dist string) (util.CleanFn, error) {
 
 func CreateReadonlyLayer(rootUrl string) error {
 	// 将busybox.tar解压到busybox目录下
-	bbDir := rootUrl + "busybox/"
+	bbDir := rootUrl + "/busybox"
 	exist, err := util.PathExists(bbDir)
 	if err != nil {
 		return err
@@ -264,18 +271,18 @@ func CreateReadonlyLayer(rootUrl string) error {
 	if err != nil {
 		return err
 	}
-	_, err = exec.Command("tar", "-xvf", rootUrl+"busybox.tar", "-C", bbDir).CombinedOutput()
+	_, err = exec.Command("tar", "-xvf", rootUrl+"/busybox.tar", "-C", bbDir).CombinedOutput()
 	return err
 }
 
 func CreateWriteLayer(rootUrl string) (util.CleanFn, error) {
 	// 创建writeLayer文件夹作为容器的唯一可写层
-	return util.NewDir(rootUrl+"writeLayer/", 0777)
+	return util.NewDir(rootUrl+"/writeLayer", 0777)
 }
 
 func Mount(rootUrl string, mntUrl string) (util.CleanFn, error) {
 	// https://askubuntu.com/questions/109413/how-do-i-use-overlayfs
-	option := fmt.Sprintf("upperdir=%swriteLayer,lowerdir=%sbusybox,workdir=%sworkdir", rootUrl, rootUrl, rootUrl)
+	option := fmt.Sprintf("upperdir=%s/writeLayer,lowerdir=%s/busybox,workdir=%s/workdir", rootUrl, rootUrl, rootUrl)
 	logrus.Infof("exec command: mount -t overlay -o %s none %s", option, mntUrl)
 	cmd := exec.Command("mount", "-t", "overlay" /* ubuntu 不再支持aufs, 使用overlay*/, "-o", option, "none", mntUrl)
 	unMount := func() error {
