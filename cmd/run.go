@@ -51,7 +51,7 @@ var tty bool
 var detach bool
 var resource subsystem.ResourceConfig
 var volume string
-var name string
+var cName string
 
 // runCmd represents the run command
 // 退出之后执行 `sudo mount -t proc proc /proc`
@@ -75,10 +75,14 @@ func init() {
 	runCmd.Flags().StringVar(&resource.CpuShare, "cpushare", "", "cpu share limit")
 	runCmd.Flags().StringVar(&resource.CpuSet, "cpuset", "", "cpu set limit")
 	runCmd.Flags().StringVarP(&volume, "volume", "v", "", "mount volume")
-	runCmd.Flags().StringVarP(&name, "name", "n", "", "container name")
+	runCmd.Flags().StringVarP(&cName, "name", "n", "", "container name")
 }
 
 func Run(cmd string, tty bool) {
+	id := util.CreateCId()
+	if cName == "" {
+		cName = id
+	}
 	parent, writePipe, err, clean := NewParentProcess(tty)
 	if err != nil {
 		logrus.Error("new parent process error " + err.Error())
@@ -102,13 +106,15 @@ func Run(cmd string, tty bool) {
 	}
 
 	// 记录容器信息
-	_, cleanInfo, err := container.CreateContainerInfo(parent.Process.Pid, cmd, name)
+	_, cleanInfo, err := container.CreateContainerInfo(id, parent.Process.Pid, cmd, cName)
 	if err != nil {
 		logrus.Error(errors.Wrap(err, "create container info").Error())
 		return
 	}
 	defer func() {
-		if !tty { return }
+		if !tty {
+			return
+		}
 		err := cleanInfo()
 		if err != nil {
 			logrus.Error(errors.Wrap(err, "clean container info").Error())
@@ -154,8 +160,8 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, util.CleanFn) {
 
 	// 把readPipe发送给子进程
 	command.ExtraFiles = []*os.File{r}
-	mntUrl := "/root/mnt"
-	cleanup, err := NewWorkSpace("/root/", mntUrl)
+	mntUrl := "/root/" + cName + "/mnt"
+	cleanup, err := NewWorkSpace("/root/"+cName+"/", mntUrl)
 	if err != nil {
 		return nil, nil, err, cleanup
 	}
@@ -260,11 +266,11 @@ func CreateReadonlyLayer(rootUrl string) error {
 	if exist {
 		return nil
 	}
-	err = os.Mkdir(bbDir, 0777)
+	err = os.MkdirAll(bbDir, 0777)
 	if err != nil {
 		return err
 	}
-	_, err = exec.Command("tar", "-xvf", rootUrl+"busybox.tar", "-C", bbDir).CombinedOutput()
+	_, err = exec.Command("tar", "-xvf", "/root/busybox.tar", "-C", bbDir).CombinedOutput()
 	return err
 }
 

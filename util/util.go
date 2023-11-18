@@ -13,7 +13,7 @@ func CreateCId() string {
 }
 
 func NewDir(dirPath string, perm os.FileMode) (cleanFn CleanFn, err error) {
-	err = os.Mkdir(dirPath, perm)
+	err = os.MkdirAll(dirPath, perm)
 	cleanFn = func() error {
 		logrus.Debug("remove dir " + dirPath)
 		return os.RemoveAll(dirPath)
