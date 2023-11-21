@@ -13,6 +13,7 @@ import (
 	"mydocker/util"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"syscall"
 )
@@ -50,6 +51,8 @@ var cleanup = func() error {
 var tty bool
 var detach bool
 var resource subsystem.ResourceConfig
+
+// TODO 多个挂载卷
 var volume string
 var cName string
 
@@ -170,6 +173,12 @@ func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error, util.CleanFn) {
 		command.Stdin = os.Stdin
 		command.Stdout = os.Stdout
 		command.Stderr = os.Stderr
+	} else {
+		logFile, err := CreateLogFile(cName)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "create log file"), cleanup
+		}
+		command.Stdout = logFile
 	}
 	return command, w, nil, cleanup
 }
@@ -293,4 +302,16 @@ func Mount(rootUrl string, mntUrl string) (util.CleanFn, error) {
 	util.BindOutput(cmd)
 	err := cmd.Run()
 	return unMount, err
+}
+
+func CreateLogFile(cName string) (*os.File, error) {
+	// create dir
+	dirPath := path.Join(container.DefaultInfoLocation, cName)
+	err := os.MkdirAll(dirPath, 0622)
+	if err != nil {
+		return nil, err
+	}
+	// create file
+	logFile := path.Join(dirPath, container.LogFile)
+	return os.Create(logFile)
 }
