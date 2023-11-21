@@ -11,6 +11,7 @@ package nsenter
 #include <fcntl.h>
 
 // __attribute__((constructor)) 包被引用该函数会自动执行，相当于构造函数
+// 使用构造函数的方式避免了Go多线程导致的无法进入mnt Namespace问题
 __attribute__((constructor)) void enter_namespace(void) {
 	char *mydocker_pid;
 	mydocker_pid = getenv("mydocker_pid");

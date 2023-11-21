@@ -37,6 +37,10 @@ func init() {
 }
 
 func ExecContainer(cName string, commands []string) error {
+	if os.Getenv(EnvExecPid) != "" {
+		// 避免重复调用
+		return nil
+	}
 	cmdS := strings.Join(commands, " ")
 	info, err := container.GetContainerInfo(cName)
 	if err != nil {
