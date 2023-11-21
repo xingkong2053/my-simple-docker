@@ -2,9 +2,12 @@ package container
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/sirupsen/logrus"
+	"io"
 	"mydocker/util"
 	"os"
+	"path"
 	"strconv"
 	"time"
 )
@@ -35,4 +38,23 @@ func CreateContainerInfo(id string, pid int, cmd string, name string) (string, u
 		logrus.Debugf("clean container(%s) info", name)
 		return os.RemoveAll(dir)
 	}, err
+}
+
+func GetContainerInfo(cName string) (ContainerInfo, error) {
+	exist := ContainerExist(cName)
+	var info ContainerInfo
+	if !exist {
+		return info, fmt.Errorf("container %s isn't exist", cName)
+	}
+	filePath := path.Join(DefaultInfoLocation, cName, ConfigName)
+	f, err := os.Open(filePath)
+	if err != nil {
+		return info, err
+	}
+	bytes, err := io.ReadAll(f)
+	if err != nil {
+		return info, err
+	}
+	err = json.Unmarshal(bytes, &info)
+	return info, err
 }
