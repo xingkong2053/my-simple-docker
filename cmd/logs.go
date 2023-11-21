@@ -32,6 +32,10 @@ func init() {
 }
 
 func ReadLogs(cName string) error {
+	if !container.ContainerExist(cName) {
+		logrus.Warnf("container %s isn't exist", cName)
+		return nil
+	}
 	filePath := path.Join(container.DefaultInfoLocation, cName, container.LogFile)
 	logrus.Info("open log file: " + filePath)
 	file, err := os.Open(filePath)
