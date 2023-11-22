@@ -29,11 +29,6 @@ func init() {
 }
 
 func StopContainer(cName string) error {
-	exist := container.ContainerExist(cName)
-	if !exist {
-		logrus.Infof("container %s doesn't exist", cName)
-		return nil
-	}
 	info, err := container.GetContainerInfo(cName)
 	if err != nil {
 		return err

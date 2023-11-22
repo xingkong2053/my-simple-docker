@@ -33,7 +33,7 @@ func GetContainerInfo(cName string) (ContainerInfo, error) {
 	exist := ContainerExist(cName)
 	var info ContainerInfo
 	if !exist {
-		return info, fmt.Errorf("container %s isn't exist", cName)
+		return info, fmt.Errorf("container %s doesn't exist", cName)
 	}
 	filePath := path.Join(DefaultInfoLocation, cName, ConfigName)
 	f, err := os.Open(filePath)
@@ -86,4 +86,15 @@ func SetContainerInfo(info ContainerInfo, create bool) error {
 	}
 	bytes, _ := json.Marshal(info)
 	return os.WriteFile(filePath, bytes, 0622)
+}
+
+func RemoveContainer(cName string) error {
+	info, err := GetContainerInfo(cName)
+	if err != nil {
+		return err
+	}
+	if info.Status != Stop {
+		return errors.New("couldn't remove running container")
+	}
+	return os.RemoveAll(path.Join(DefaultInfoLocation, cName))
 }
